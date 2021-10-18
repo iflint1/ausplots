@@ -1,0 +1,157 @@
+---
+title: "Ausplots"
+output:
+  pdf_document:
+  latex_engine: xelatex
+vignette: >
+  %\VignetteIndexEntry{ausplots}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+is_check <- ("CheckExEnv" %in% search()) || any(c("_R_CHECK_TIMINGS_",
+                                                  "_R_CHECK_LICENSE_") %in% names(Sys.getenv()))
+library(knitr)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = !is_check,
+  purl = !is_check,
+  tidy.opts = list(width.cutoff = 80), 
+  tidy = TRUE
+)
+rm(list = ls())
+
+set.seed(1)
+```
+
+In this vignette, we explore show how to fit our point process model to the TERN Ausplots dataset.
+We begin by installing the `ppjsdm` package which implements the saturated pairwise interaction Gibbs point process.
+We also load the `rgdal` library for its coordinate systems implementation.
+
+```{r setup}
+need_ppjsdm <- !("ppjsdm" %in% installed.packages()[, "Package"])
+if(need_ppjsdm) {
+  library(devtools)
+  devtools::install_github("iflint1/ppjsdm", 
+                           upgrade = "never",
+                           quiet = TRUE)
+}
+
+suppressMessages(library(ppjsdm))
+suppressMessages(library(rgdal))
+```
+
+## Dataset load
+
+The dataset is loaded by a single call to an included utility function, see the code block below.
+
+```{r}
+source("R/ausplots.R")
+load(ausplots())
+```
+
+The loaded data is in the following form.
+First, we include the plot by plot data in the `configurations` and `windows` objects. 
+These are lists of `ppjsdm` configurations and windows, respectively.
+Each entry corresponds to a forest plot, with names shown below.
+
+```{r}
+print(names(configurations))
+```
+
+The objects can be accessed as follows.
+
+```{r}
+plot(configurations$Dip)
+print(windows$Dip)
+```
+
+We also include the full configuration and corresponding window in the respective `configuration` and `window` objects.
+
+```{r, fig.height = 10, fig.width = 15}
+plot(configuration)
+str(window)
+```
+
+## Example fit on full dataset
+
+```{r}
+load(ausplots(to_consider = 5)) # Consider only 5 plots so that fit is not excessively slow
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit_complete <- gibbsm(configuration,
+                       window = window,
+                       model = "square_exponential", # Short-range interaction
+                       medium_range_model = "tanh", # Medium-range interaction
+                       short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances
+                       medium_range = matrix(200, ntypes, ntypes), # Matrix of medium-range interaction distances
+                       long_range = matrix(1000, ntypes, ntypes), # Matrix of long-range interaction distances
+                       saturation = 10, # Saturation parameter
+                       fitting_package = "glmnet", # Fitting package 
+                       which_lambda = "smallest", # Which lambda to choose if regularization
+                       min_dummy = 1e5, # Force at least 1e5 dummy points per species
+                       max_dummy = 1e5, # Force at maximum 1e5 dummy points per species
+                       dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit_complete$coefficients$alpha)
+```
+
+## More in-depth exploration of a single plot
+
+We explore here a single plot which has the second most number of species and third most number of individuals.
+
+```{r}
+load(ausplots(plot_minimum_abundance = 10, overall_minimum_abundance = 1))
+Bruxner <- configurations$Bruxner
+Bruxner_window <- windows$Bruxner
+plot(Bruxner)
+```
+
+And let's fit the model.
+
+```{r, fig.height = 10, fig.width = 15}
+ntypes <- nlevels(Bruxner$types)
+tm <- Sys.time()
+fit <- gibbsm(Bruxner,
+              window = Bruxner_window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(5, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(20, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(40, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 10, # Saturation parameter
+              fitting_package = "glmnet", # Fitting package 
+              min_dummy = 1e4, # Force at least 1e5 dummy points per species
+              max_dummy = 1e4, # Force at maximum 1e5 dummy points per species
+              dummy_distribution = "stratified") # Distribution of dummy points
+print(Sys.time() - tm)
+summ <- summary(fit)
+print(summ)
+```
+
+The model is also able to account for the trees' diameters, see code below.
+In this case, the distances matrices are measured as multiples of the trees' dbhs.
+We do not model any medium-range interactions to also illustrate how that would work.
+
+```{r, fig.height = 10, fig.width = 15}
+load(ausplots(use_marks = TRUE, plot_minimum_abundance = 10, overall_minimum_abundance = 1))
+Bruxner <- configurations$Bruxner
+Bruxner_window <- windows$Bruxner
+plot(Bruxner)
+ntypes <- nlevels(Bruxner$types)
+tm <- Sys.time()
+fit <- gibbsm(Bruxner,
+              window = Bruxner_window,
+              model = "square_exponential", # Short-range interaction
+              short_range = matrix(50, ntypes, ntypes), # Matrix of short-range interaction ratios
+              saturation = 10, # Saturation parameter
+              fitting_package = "glmnet", # Fitting package 
+              min_dummy = 1e4, # Force at least 1e5 dummy points per species
+              max_dummy = 1e4, # Force at maximum 1e5 dummy points per species
+              dummy_distribution = "stratified") # Distribution of dummy points
+print(Sys.time() - tm)
+summ <- summary(fit)
+print(summ)
+```
