@@ -3,14 +3,11 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
                      thinning_probability = 0, # Remove this percent of individuals
                      condition = "Alive", # Select only live or dead individuals
                      use_marks = FALSE, # Use individuals' diameters as marks?
-                     to_consider = 48, # How many of the plots to consider?
-                     jitter = 1e-5) { # Jitter locations with this std error
+                     jitter = 1e-5, # Jitter locations with this std error
+                     plots_to_consider) { # Which plots to consider?
   # Constants related to the dataset
   square_width <- 100
   long_square_width <- 160
-  
-  # to_consider should not be larger than the total number of plots
-  to_consider <- max(1, min(to_consider, 48))
   
   # Load the required data
   data <- utils::read.csv(file = "https://shared.tern.org.au/attachment/0e503109-2fb6-4182-969f-2d570abdbabd/data_large_tree_survey.csv", 
@@ -24,8 +21,29 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   # Filter only trees which are alive/dead depending on what we're doing
   data <- data[data$Tree_Condition == condition, ]
   
+  # Convert to AU coordinate system
+  require(rgdal)
+  d <- data.frame(lon = data$Longitude, lat = data$Latitude)
+  coordinates(d) <- c("lon", "lat")
+  proj4string(d) <- CRS("+init=epsg:4326") # WGS 84
+  CRS_new <- CRS("+proj=utm +zone=55 +south +ellps=GRS80 +units=m +no_defs") # GDA2020
+  d <- sp::spTransform(d, CRS_new)
+  data$GDA2020_X <- d@coords[, 1]
+  data$GDA2020_Y <- d@coords[, 2]
+  
+  # Construct complete configuration
+  min_x <- min(data$GDA2020_X)
+  min_y <- min(data$GDA2020_Y)
+  
   # Plots we will be considering
-  plots <- unique(data$Site_Name)[seq_len(to_consider)]
+  plots <- unique(data$Site_Name)
+  
+  # Fill in default value for plot_to_consider
+  if(!missing(plots_to_consider)) {
+    plots <- plots[plots %in% plots_to_consider]
+  }
+  
+  # Subset data to the plots we are interested in
   data <- data[data$Site_Name %in% plots, ]
   
   # Remove some of the plants to help with model stability
@@ -68,19 +86,9 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     }
   }), nm = plots)
   
-  # Convert to AU coordinate system
-  require(rgdal)
-  d <- data.frame(lon = data$Longitude, lat = data$Latitude)
-  coordinates(d) <- c("lon", "lat")
-  proj4string(d) <- CRS("+init=epsg:4326") # WGS 84
-  CRS_new <- CRS("+proj=utm +zone=55 +south +ellps=GRS80 +units=m +no_defs") # GDA2020
-  d <- sp::spTransform(d, CRS_new)
-  data$GDA2020_X <- d@coords[, 1]
-  data$GDA2020_Y <- d@coords[, 2]
-  
   # Construct complete configuration
-  xs <- data$GDA2020_X - min(data$GDA2020_X) + data$Ausplot_X
-  ys <- data$GDA2020_Y - min(data$GDA2020_Y) + data$Ausplot_Y
+  xs <- data$GDA2020_X - min_x + data$Ausplot_X
+  ys <- data$GDA2020_Y - min_y + data$Ausplot_Y
   configuration <- if(use_marks) {
     ppjsdm::Configuration(x = xs, y = ys, types = factor(factor(data$Genus_Species)), marks = data$Diameter / 100)
   } else {
