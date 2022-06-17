@@ -95,8 +95,8 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     ppjsdm::Configuration(x = xs, y = ys, types = factor(factor(data$Genus_Species)))
   }
   
-  xs <- unique(data$GDA2020_X - min(data$GDA2020_X))
-  ys <- unique(data$GDA2020_Y - min(data$GDA2020_Y))
+  xs <- unique(data$GDA2020_X - min_x)
+  ys <- unique(data$GDA2020_Y - min_y)
   window <- ppjsdm::Rectangle_window_union(lapply(seq_len(length(xs)), function(n) {
     if(xs[n] == 471794) { # Supersite with longer x-range
       c(xs[n], long_square_width + xs[n])

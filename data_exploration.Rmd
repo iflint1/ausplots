@@ -275,20 +275,19 @@ plot(true_vs_sample)
 ```{r}
 nsim <- 50
 sp <- levels(fitting_configuration$types)[1]
-print(sp)
 sp_index <- which(names(coef(fit)$beta0) == sp)
 only_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types == sp], 
                                       y = prediction_configuration$x[prediction_configuration$types == sp],
                                       types = prediction_configuration$types[prediction_configuration$types == sp])
 everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types != sp], 
-                                      y = prediction_configuration$x[prediction_configuration$types != sp],
-                                      types = prediction_configuration$types[prediction_configuration$types != sp])
+                                                   y = prediction_configuration$x[prediction_configuration$types != sp],
+                                                   types = prediction_configuration$types[prediction_configuration$types != sp])
 
 samples <- lapply(seq_len(nsim), function(i) {
   ppjsdm::rgibbs(fit,
                  window = windows[[prediction_plot]],
                  steps = 1e3,
-                 starting_configuration = only_species,
+                 starting_configuration = Configuration(),
                  only_simulate_these_types = sp_index,
                  conditional_configuration = everything_except_species)
 })
