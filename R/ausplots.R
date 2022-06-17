@@ -4,13 +4,21 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
                      condition = "Alive", # Select only live or dead individuals
                      use_marks = FALSE, # Use individuals' diameters as marks?
                      jitter = 1e-5, # Jitter locations with this std error
+                     download_path = getwd(), # Where should we download the Ausplots CSV?
+                     only_species_with_per_plot = 0, # Set this to >0 value to force all considered species to have a min amount of individuals on each plot
                      plots_to_consider) { # Which plots to consider?
   # Constants related to the dataset
   square_width <- 100
   long_square_width <- 160
   
+  # If the data does not yet exist, download it
+  if(!file.exists(file.path(download_path, "ausplots.csv"))) {
+    download.file(url = "https://shared.tern.org.au/attachment/0e503109-2fb6-4182-969f-2d570abdbabd/data_large_tree_survey.csv",
+                  destfile = file.path(download_path, "ausplots.csv"))
+  }
+  
   # Load the required data
-  data <- utils::read.csv(file = "https://shared.tern.org.au/attachment/0e503109-2fb6-4182-969f-2d570abdbabd/data_large_tree_survey.csv", 
+  data <- utils::read.csv(file = file.path(download_path, "ausplots.csv"), 
                           stringsAsFactors = FALSE, 
                           allowEscapes = TRUE, 
                           flush = TRUE)
@@ -62,6 +70,17 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     sum(species == sp)
   })
   data$Genus_Species[species_abundance[data$Genus_Species] < overall_minimum_abundance] <- "Rare species"
+  
+  # Ensure that we only consider species with a sufficient number of individuals per plot
+  new_names <- sapply(unique(data$Genus_Species), function(sp) {
+    for(pl in plots) {
+      if(sum(data$Genus_Species == sp & data$Site_Name == pl) < only_species_with_per_plot) {
+        return("Restricted species")
+      }
+    }
+    return(sp)
+  })
+  data$Genus_Species <- sapply(data$Genus_Species, function(sp) new_names[sp])
   
   # Put everything into Configuration format
   configurations <- setNames(lapply(plots, function(plot) {

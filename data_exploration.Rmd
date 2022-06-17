@@ -78,7 +78,8 @@ plot(configuration)
 ## Example fit on full dataset
 
 ```{r}
-load(ausplots(plots_to_consider = c("Frankland", "Collins", "Clare", "Sutton", "Giants"))) # Consider only 5 plots so that fit is not excessively slow
+load(ausplots(plots_to_consider = c("Frankland", "Collins", "Clare", "Sutton", "Giants"), # Consider only 5 plots so that fit is not excessively slow
+              only_species_with_per_plot = 1)) # Force there to be at least 1 individual of each considered species on each plot
 ntypes <- nlevels(configuration$types)
 tm <- Sys.time()
 fit_complete <- gibbsm(configuration,
@@ -95,6 +96,8 @@ fit_complete <- gibbsm(configuration,
                        dummy_distribution = "binomial") # Distribution of dummy points
 print(Sys.time() - tm)
 print(fit_complete$coefficients$alpha)
+print(fit_complete$coefficients$gamma)
+print(summary(fit_complete))
 ```
 
 ## More in-depth exploration of a single plot
