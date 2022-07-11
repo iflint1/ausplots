@@ -64,6 +64,11 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   data$Ausplot_X <- rnorm(length(data$Ausplot_X), mean = data$Ausplot_X, sd = jitter)
   data$Ausplot_Y <- rnorm(length(data$Ausplot_Y), mean = data$Ausplot_Y, sd = jitter)
   
+  # Restrict to proper range
+  data$Ausplot_X[data$Site_Name == "Supersite"] <- pmax(pmin(data$Ausplot_X[data$Site_Name == "Supersite"], long_square_width), 0)
+  data$Ausplot_X[data$Site_Name != "Supersite"] <- pmax(pmin(data$Ausplot_X[data$Site_Name != "Supersite"], square_width), 0)
+  data$Ausplot_Y <- pmax(pmin(data$Ausplot_Y, square_width), 0)
+  
   # Group species with small abundance together into a new category
   species <- factor(data$Genus_Species)
   species_abundance <- sapply(levels(species), function(sp) {
@@ -82,29 +87,6 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   })
   data$Genus_Species <- sapply(data$Genus_Species, function(sp) new_names[sp])
   
-  # Put everything into Configuration format
-  configurations <- setNames(lapply(plots, function(plot) {
-    d <- data[data$Site_Name == plot, ]
-    types <- factor(d$Genus_Species)
-    types_names <- levels(types)
-    types_names[sapply(types_names, function(sp) sum(types == sp)) < plot_minimum_abundance] <- "Rare species"
-    levels(types) <- types_names
-    if(use_marks) {
-      ppjsdm::Configuration(x = d$Ausplot_X, y = d$Ausplot_Y, types = types, marks = d$Diameter / 100)
-    } else {
-      ppjsdm::Configuration(x = d$Ausplot_X, y = d$Ausplot_Y, types = types)
-    }
-  }), nm = plots)
-  
-  # Construct the corresponding windows
-  windows <- setNames(lapply(plots, function(plot) {
-    if(plot == "Supersite") { # Supersite with longer x-range
-      ppjsdm::Rectangle_window(c(0, long_square_width), c(0, square_width))
-    } else {
-      ppjsdm::Rectangle_window(c(0, square_width), c(0, square_width))
-    }
-  }), nm = plots)
-  
   # Construct complete configuration
   xs <- data$GDA2020_X - min_x + data$Ausplot_X
   ys <- data$GDA2020_Y - min_y + data$Ausplot_Y
@@ -114,6 +96,7 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     ppjsdm::Configuration(x = xs, y = ys, types = factor(factor(data$Genus_Species)))
   }
   
+  # Construct the big window
   xs <- unique(data$GDA2020_X - min_x)
   ys <- unique(data$GDA2020_Y - min_y)
   window <- ppjsdm::Rectangle_window_union(lapply(seq_len(length(xs)), function(n) {
@@ -125,6 +108,31 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   }), lapply(seq_len(length(xs)), function(n) {
     c(ys[n], square_width + ys[n])
   }))
+  
+  # Put everything into Configuration format
+  configurations <- setNames(lapply(plots, function(plot) {
+    d <- data[data$Site_Name == plot, ]
+    types <- factor(d$Genus_Species)
+    types_names <- levels(types)
+    types_names[sapply(types_names, function(sp) sum(types == sp)) < plot_minimum_abundance] <- "Rare species"
+    levels(types) <- types_names
+    if(use_marks) {
+      ppjsdm::Configuration(x = d$Ausplot_X + d$GDA2020_X - min_x, y = d$Ausplot_Y + d$GDA2020_Y - min_y, types = types, marks = d$Diameter / 100)
+    } else {
+      ppjsdm::Configuration(x = d$Ausplot_X + d$GDA2020_X - min_x, y = d$Ausplot_Y + d$GDA2020_Y - min_y, types = types)
+    }
+  }), nm = plots)
+  
+  # Construct the corresponding windows
+  xs <- unique(data$GDA2020_X - min_x)
+  ys <- unique(data$GDA2020_Y - min_y)
+  windows <- setNames(lapply(seq_len(length(xs)), function(n) {
+    if(xs[n] == 471794) { # Supersite with longer x-range
+      ppjsdm::Rectangle_window(c(xs[n], long_square_width + xs[n]), c(ys[n], square_width + ys[n]))
+    } else {
+      ppjsdm::Rectangle_window(c(xs[n], square_width + xs[n]), c(ys[n], square_width + ys[n]))
+    }
+  }), nm = plots)
   
   file_path <- file.path(tempdir(), "sv.RData")
   save(list = c("configuration",
