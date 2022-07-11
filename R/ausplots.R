@@ -99,8 +99,12 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   # Construct the big window
   xs <- unique(data$GDA2020_X - min_x)
   ys <- unique(data$GDA2020_Y - min_y)
+  super_site_x <- which(xs == data$GDA2020_X[data$Site_Name == "Supersite"][1] - min_x)
+  if(length(super_site_x) == 0) {
+    super_site_x <- Inf
+  }
   window <- ppjsdm::Rectangle_window_union(lapply(seq_len(length(xs)), function(n) {
-    if(xs[n] == 471794) { # Supersite with longer x-range
+    if(n == super_site_x) { # Supersite with longer x-range
       c(xs[n], long_square_width + xs[n])
     } else {
       c(xs[n], square_width + xs[n])
@@ -126,8 +130,12 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   # Construct the corresponding windows
   xs <- unique(data$GDA2020_X - min_x)
   ys <- unique(data$GDA2020_Y - min_y)
+  super_site_x <- which(xs == data$GDA2020_X[data$Site_Name == "Supersite"][1] - min_x)
+  if(length(super_site_x) == 0) {
+    super_site_x <- Inf
+  }
   windows <- setNames(lapply(seq_len(length(xs)), function(n) {
-    if(xs[n] == 471794) { # Supersite with longer x-range
+    if(n == super_site_x) { # Supersite with longer x-range
       ppjsdm::Rectangle_window(c(xs[n], long_square_width + xs[n]), c(ys[n], square_width + ys[n]))
     } else {
       ppjsdm::Rectangle_window(c(xs[n], square_width + xs[n]), c(ys[n], square_width + ys[n]))
