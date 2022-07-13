@@ -43,6 +43,8 @@ suppressMessages(library(ggplot2))
 suppressMessages(library(ppjsdm))
 suppressMessages(library(rgdal))
 suppressMessages(library(spatstat))
+
+source("R/ausplots.R")
 ```
 
 ## Dataset load
@@ -50,7 +52,6 @@ suppressMessages(library(spatstat))
 The dataset is loaded by a single call to an included utility function, see the code block below.
 
 ```{r}
-source("R/ausplots.R")
 load(ausplots())
 ```
 
@@ -66,14 +67,14 @@ print(names(configurations))
 The objects can be accessed as follows.
 
 ```{r}
-plot(configurations$Dip)
+plot(configurations$Dip, window = windows$Dip)
 print(windows$Dip)
 ```
 
 We also include the full configuration and corresponding window in the respective `configuration` and `window` objects.
 
 ```{r, fig.height = 10, fig.width = 15}
-plot(configuration)
+plot(configuration, window = window)
 ```
 
 ## Example fit on multiple plots dataset
@@ -134,39 +135,29 @@ One can plot the corresponding Papangelou conditional intensity on some of the p
 ```{r, fig.height = 5, fig.width = 8}
 sp <- "Eucalyptus regnans"
 plot_index <- 1
-sp_index <- which(levels(configurations[[plot_index]]$types) == sp)
-prediction_configuration <- configurations[[plot_index]]
-
-others <- ppjsdm::Configuration(x = prediction_configuration$x,
-                                y = prediction_configuration$y,
-                                types = prediction_configuration$types)
 
 plot_papangelou(fit,
                 window = windows[[plot_index]],
-                configuration = others,
-                type = sp_index,
+                configuration = configuration,
+                type = sp,
                 use_log = TRUE,
                 grid_steps = c(500, 500))
 ```
 
+It is also interesting to show the Papangelou conditional intensity, when conditioning on everything except the target species.
+This is readily done with the `drop_type_from_configuration` parameter.
+
 ```{r, fig.height = 5, fig.width = 8}
 sp <- "Eucalyptus regnans"
-plot_index <- 3
-sp_index <- which(levels(configurations[[plot_index]]$types) == sp)
-prediction_configuration <- configurations[[plot_index]]
+plot_index <- 4
 
-others <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types != sp],
-                                y = prediction_configuration$y[prediction_configuration$types != sp],
-                                types = prediction_configuration$types[prediction_configuration$types != sp])
 plot_papangelou(fit,
                 window = windows[[plot_index]],
-                configuration = others,
-                type = sp_index,
+                configuration = configuration,
+                type = sp,
                 use_log = TRUE,
-                grid_steps = c(500, 500)) + 
-  geom_point(data = data.frame(x = prediction_configuration$x[prediction_configuration$types == sp],
-                               y = prediction_configuration$y[prediction_configuration$types == sp]), 
-             aes(x = x, y = y))
+                drop_type_from_configuration = TRUE,
+                grid_steps = c(500, 500))
 ```
 
 In order to get a better idea of how the model is performing, let us have a look at its predictions.
@@ -251,13 +242,12 @@ To begin assessing the model performance, let us draw one sample of Eucalyptus r
 plot_index <- 3
 sp <- "Acacia melanoxylon"
 sp_index <- which(names(coef(fit)$beta0) == sp)
-prediction_configuration <- configurations[[plot_index]]
-only_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types == sp], 
-                                      y = prediction_configuration$y[prediction_configuration$types == sp],
-                                      types = prediction_configuration$types[prediction_configuration$types == sp])
-everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types != sp], 
-                                                   y = prediction_configuration$y[prediction_configuration$types != sp],
-                                                   types = prediction_configuration$types[prediction_configuration$types != sp])
+only_species <- ppjsdm::Configuration(x = configurations[[plot_index]]$x[configurations[[plot_index]]$types == sp], 
+                                      y = configurations[[plot_index]]$y[configurations[[plot_index]]$types == sp],
+                                      types = configurations[[plot_index]]$types[configurations[[plot_index]]$types == sp])
+everything_except_species <- ppjsdm::Configuration(x = configuration$x[configuration$types != sp], 
+                                                   y = configuration$y[configuration$types != sp],
+                                                   types = configuration$types[configuration$types != sp])
 
 sample <- ppjsdm::rgibbs(fit,
                          window = windows[[plot_index]], # Where we want to simulate
@@ -269,7 +259,7 @@ true_vs_sample <- ppjsdm::Configuration(x = c(only_species$x, sample$x),
                                         y = c(only_species$y, sample$y),
                                         types = c(rep("true", length(only_species$x)), 
                                                   rep("simulated", length(sample$x))))
-plot(true_vs_sample)
+plot(true_vs_sample, window = windows[[plot_index]])
 ```
 
 ## More in-depth exploration of a single plot
@@ -283,7 +273,9 @@ Bruxner_window <- windows$Bruxner
 plot(Bruxner)
 ```
 
-And let's fit the model.
+When fitting the model, we choose smaller `medium_range` and `long_range` parameters since we are now on the scale of a single plot.
+In addition, on a single plot the stratified dummy distribution is available, allowing us to greatly reduce the required number of dummy points.
+Let's fit the model.
 
 ```{r, fig.height = 10, fig.width = 15}
 ntypes <- nlevels(Bruxner$types)
@@ -297,292 +289,353 @@ fit <- gibbsm(Bruxner,
               long_range = matrix(40, ntypes, ntypes), # Matrix of long-range interaction distances
               saturation = 10, # Saturation parameter
               fitting_package = "glm", # Fitting package 
-              min_dummy = 1e3, # Force at least 1e3 dummy points per species
-              max_dummy = 1e3, # Force at maximum 1e3 dummy points per species
+              min_dummy = 1e3, # Force at least this number of dummy points per species
+              max_dummy = 1e3, # Force at maximum this number of dummy points per species
               nthreads = 4, # Number of threads to use
               dummy_distribution = "stratified") # Distribution of dummy points
 print(Sys.time() - tm)
-summ <- summary(fit)
-print(summ)
-```
-
-The model is also able to account for the trees' diameters, see code below.
-In this case, the distances matrices are measured as multiples of the trees' dbhs.
-We do not model any medium-range interactions
-
-```{r, fig.height = 10, fig.width = 15}
-load(ausplots(use_marks = TRUE, plot_minimum_abundance = 10, overall_minimum_abundance = 1))
-Bruxner <- configurations$Bruxner
-Bruxner_window <- windows$Bruxner
-plot(Bruxner)
-ntypes <- nlevels(Bruxner$types)
-tm <- Sys.time()
-fit <- gibbsm(Bruxner,
-              window = Bruxner_window,
-              model = "square_exponential", # Short-range interaction
-              short_range = matrix(50, ntypes, ntypes), # Matrix of short-range interaction ratios
-              saturation = 10, # Saturation parameter
-              fitting_package = "glmnet", # Fitting package 
-              min_dummy = 1e3, # Force at least 1e3 dummy points per species
-              max_dummy = 1e3, # Force at maximum 1e3 dummy points per species
-              nthreads = 4, # Number of threads to use
-              dummy_distribution = "stratified") # Distribution of dummy points
-print(Sys.time() - tm)
-summ <- summary(fit)
-print(summ)
-```
-
-# Subset
-
-Let us restrict our attention to the plots on the bottom-right.
-
-```{r, fig.height = 10, fig.width = 15}
-load(ausplots())
-subs <- ppjsdm::Configuration(x = configuration$x[configuration$y < 3e3],
-                              y = configuration$y[configuration$y < 3e3],
-                              types = droplevels(configuration$types[configuration$y < 3e3]),
-                              marks = configuration$marks[configuration$y < 3e3])
-plot_indices <- sapply(window$y_ranges, function(yr) yr[2]) < 3e3
-win <- ppjsdm::Rectangle_window_union(window$x_ranges[plot_indices], window$y_ranges[plot_indices])
-print(win)
-plot(subs)
-```
-
-```{r}
-ntypes <- nlevels(subs$types)
-tm <- Sys.time()
-fit_complete <- ppjsdm::gibbsm(subs,
-                               window = win,
-                               model = "square_exponential", # Short-range interaction
-                               medium_range_model = "tanh", # Medium-range interaction
-                               short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances
-                               medium_range = matrix(200, ntypes, ntypes), # Matrix of medium-range interaction distances
-                               long_range = matrix(1000, ntypes, ntypes), # Matrix of long-range interaction distances
-                               saturation = 10, # Saturation parameter
-                               fitting_package = "glmnet", # Fitting package 
-                               min_dummy = 1e3, # Force at least 1e4 dummy points per species
-                               max_dummy = 1e3, # Force at maximum 1e4 dummy points per species
-                               dummy_distribution = "binomial", # Distribution of dummy points
-                               debug = TRUE, # Add debugging info
-                               nthreads = 4) # Number of threads to use
-Sys.time() - tm
-summary(fit_complete)
-```
-
-# Fit on one plot, predict on other
-
-```{r}
-fitting_plot <- "Mackenzie"
-fitting_configuration <- configurations[[fitting_plot]]
-
-prediction_plot <- "BenRidge"
-prediction_configuration <- configurations[[prediction_plot]]
-
-species <- union(levels(fitting_configuration$types), levels(prediction_configuration$types))
-
-fitting_abundances <- sapply(species, function(t) sum(fitting_configuration$types == t))
-prediction_abundances <- sapply(species, function(t) sum(prediction_configuration$types == t))
-abundances <- setNames(sapply(species, function(sp) {
-  fitting_abundances[sp] + prediction_abundances[sp]
-}), nm = union(names(fitting_abundances), names(prediction_abundances)))
-
-min_total <- 30
-min_per_plot <- 10
-new_names <- names(abundances)
-new_names[abundances[new_names] < min_total | 
-            fitting_abundances[new_names] < min_per_plot | 
-            prediction_abundances[new_names] < min_per_plot] <- "Other species"
-names(new_names) <- names(abundances)
-
-levels(fitting_configuration$types) <- new_names[levels(fitting_configuration$types)]
-levels(prediction_configuration$types) <- new_names[levels(prediction_configuration$types)]
-
-plot(fitting_configuration)
-plot(prediction_configuration)
-
-ntypes <- nlevels(fitting_configuration$types)
-tm <- Sys.time()
-fit <- ppjsdm::gibbsm(fitting_configuration,
-                      window = windows[[fitting_plot]],
-                      model = "square_exponential", # Short-range interaction
-                      medium_range_model = "tanh", # Medium-range interaction
-                      short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances
-                      medium_range = matrix(20, ntypes, ntypes), # Matrix of medium-range interaction distances
-                      long_range = matrix(50, ntypes, ntypes), # Matrix of long-range interaction distances
-                      saturation = 10, # Saturation parameter
-                      fitting_package = "glm", # Fitting package 
-                      min_dummy = 1e4, # Force at least 1e4 dummy points per species
-                      max_dummy = 1e4, # Force at maximum 1e4 dummy points per species
-                      dummy_distribution = "stratified", # Distribution of dummy points
-                      debug = TRUE, # Add debugging info
-                      nthreads = 4) # Number of threads to use
-Sys.time() - tm
-summary(fit)
-
 print(fit$coefficients$alpha)
 print(fit$coefficients$gamma)
+print(summary(fit))
 ```
 
-```{r}
-sp <- levels(fitting_configuration$types)[1]
-print(sp)
-sp_index <- which(names(coef(fit)$beta0) == sp)
-only_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types == sp], 
-                                      y = prediction_configuration$x[prediction_configuration$types == sp],
-                                      types = prediction_configuration$types[prediction_configuration$types == sp])
-everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types != sp], 
-                                      y = prediction_configuration$x[prediction_configuration$types != sp],
-                                      types = prediction_configuration$types[prediction_configuration$types != sp])
+The corresponding Papangelou conditional intensity on a few of the species looks like this.
 
-sample <- ppjsdm::rgibbs(fit,
-                         window = windows[[prediction_plot]],
-                         steps = 1e3, # Number of steps in the Metropolis-Hastings algorithm
-                         starting_configuration = only_species, # Starting configuration in the simulation
-                         only_simulate_these_types = sp_index, # Which species to simulate
-                         conditional_configuration = everything_except_species) # Conditional on these individuals
-true_vs_sample <- ppjsdm::Configuration(x = c(only_species$x, sample$x),
-                                        y = c(only_species$y, sample$y),
-                                        types = c(rep("true", length(only_species$x)), 
-                                                  rep("simulated", length(sample$x))))
-plot(true_vs_sample)
+```{r, fig.height = 7, fig.width = 11}
+plot_papangelou(fit,
+                window = Bruxner_window,
+                configuration = Bruxner,
+                type = "Allocasuarina torulosa",
+                use_log = TRUE,
+                drop_type_from_configuration = TRUE,
+                show_only_type = TRUE,
+                grid_steps = c(100, 100))
+
+plot_papangelou(fit,
+                window = Bruxner_window,
+                configuration = Bruxner,
+                type = "Eucalyptus microcorys",
+                use_log = TRUE,
+                drop_type_from_configuration = TRUE,
+                show_only_type = TRUE,
+                grid_steps = c(100, 100))
 ```
 
-```{r}
-nsim <- 50
-sp <- levels(fitting_configuration$types)[1]
-sp_index <- which(names(coef(fit)$beta0) == sp)
-only_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types == sp], 
-                                      y = prediction_configuration$x[prediction_configuration$types == sp],
-                                      types = prediction_configuration$types[prediction_configuration$types == sp])
-everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types != sp], 
-                                                   y = prediction_configuration$x[prediction_configuration$types != sp],
-                                                   types = prediction_configuration$types[prediction_configuration$types != sp])
+So on a few of the species, the Papangelou conditional intensity, giving the probability of a given species conditional on all others ones, appears to be a good predictor of actual locations at which the species occurs.
+Let us formalise this insight, and compute the AUC of each species with respect to the corresponding Papangelou conditional intensity.
 
-samples <- lapply(seq_len(nsim), function(i) {
-  ppjsdm::rgibbs(fit,
-                 window = windows[[prediction_plot]],
-                 steps = 1e3,
-                 starting_configuration = Configuration(),
-                 only_simulate_these_types = sp_index,
-                 conditional_configuration = everything_except_species)
+```{r}
+species <- levels(Bruxner$types)
+
+papangelous <- setNames(lapply(species, function(sp) {
+  plot_papangelou(fit,
+                  window = Bruxner_window,
+                  configuration = Bruxner,
+                  type = sp,
+                  use_log = FALSE,
+                  drop_type_from_configuration = TRUE,
+                  return_papangelou = TRUE,
+                  grid_steps = c(100, 100))
+}), nm = species)
+
+aucs <- sapply(species, function(sp) {
+  intensity <- papangelous[[sp]]
+  conf <- ppp(x = Bruxner$x[Bruxner$types == sp],
+              y = Bruxner$y[Bruxner$types == sp],
+              window = owin(Bruxner_window$x_range, Bruxner_window$y_range))
+  auc(X = conf, covariate = intensity)
 })
 
-samples <- lapply(samples, function(x) ppp(x = x$x, y = x$y, window = owin(c(0, 100), c(0, 100))))
-
-only_species_ppp <- ppp(x = only_species$y[only_species$types == sp], 
-                        y = only_species$x[only_species$types == sp],
-                        window = owin(c(0, 100), c(0, 100)))
-env <- envelope(only_species_ppp, fun = Linhom, nsim = length(samples), 
-                normpower = 2, leaveoneout = FALSE, simulate = samples, verbose = FALSE)
-plot(env)
-abline(a = 0, b = 1, col = "blue")
+print(sort(aucs))
 ```
+
+Overall, we get very good AUCs.
+As an illustration of how the analysis could go, let us have a closer look at the species with the best AUC, *Eucalyptus pilularis*.
+It is found to have particularly large negative interactions with members of its own species, explaining its regular distribution.
 
 ```{r}
-intensities <- lapply(samples, function(sample) density(sample))
-conditional_intensity <- Reduce("+", intensities) / length(intensities)
-plot(conditional_intensity)
-points(only_species_ppp)
-auc(only_species_ppp, conditional_intensity)
-
-intensity_at_points <- as.function(conditional_intensity)(only_species_ppp$x, only_species_ppp$y)
-residual <- density(only_species_ppp, weights = 1 / intensity_at_points)
-range(residual)
-plot(residual)
-hist(residual)
+sp <- "Eucalyptus pilularis"
+print(sort(fit$coefficients$alpha[sp, ]))
+print(sort(fit$coefficients$gamma[sp, ]))
+plot_papangelou(fit,
+                window = Bruxner_window,
+                configuration = Bruxner,
+                type = sp,
+                use_log = TRUE,
+                drop_type_from_configuration = TRUE,
+                show_only_type = TRUE,
+                grid_steps = c(100, 100))
 ```
 
-# Eucalyptus obliqua
+To see how this conditional intensity is shaped by some of these species, we can subset the configuration to a few of the species with which there are large interactions.
 
 ```{r}
-load(ausplots(plots_to_consider = c("Newline", "WaratahMix", "WogWay", "Goodenia", "Candelo"),
-              plot_minimum_abundance = 1))
-
-# Get rid of of everything except Eucalyptus obliqua
-new_types <- levels(configuration$types)
-new_types[new_types != "Eucalyptus obliqua"] <- "Other species"
-levels(configuration$types) <- new_types
-
-ntypes <- nlevels(configuration$types)
-tm <- Sys.time()
-fit <- ppjsdm::gibbsm(configuration,
-                      window = window,
-                      model = "square_exponential", # Short-range interaction
-                      medium_range_model = "tanh", # Medium-range interaction
-                      short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances
-                      medium_range = matrix(15, ntypes, ntypes), # Matrix of medium-range interaction distances
-                      long_range = matrix(50, ntypes, ntypes), # Matrix of long-range interaction distances
-                      saturation = 4, # Saturation parameter
-                      fitting_package = "glmnet", # Fitting package 
-                      min_dummy = 1e5, # Force at least this many dummy points per species
-                      max_dummy = 1e5, # Force at maximum this many dummy points per species
-                      dummy_distribution = "binomial", # Distribution of dummy points
-                      nthreads = 4) # Number of threads to use
-Sys.time() - tm
-fit$coefficients$alpha
-fit$coefficients$gamma
-summary(fit)
+sp <- "Eucalyptus pilularis"
+plot_papangelou(fit,
+                window = Bruxner_window,
+                configuration = Bruxner[unique(c(sp, 
+                                                 names(sort(fit$coefficients$alpha[sp, ]))[1],
+                                                 names(sort(fit$coefficients$alpha[sp, ], decreasing = TRUE))[1],
+                                                 names(sort(fit$coefficients$gamma[sp, ]))[1],
+                                                 names(sort(fit$coefficients$gamma[sp, ], decreasing = TRUE))[1]))],
+                type = sp,
+                use_log = TRUE,
+                drop_type_from_configuration = TRUE,
+                show_only_type = FALSE,
+                grid_steps = c(100, 100))
 ```
 
-```{r}
-load(ausplots(plots_to_consider = c("Flowerdale", "Dip", "Bird"),
-              plot_minimum_abundance = 1))
+<!-- # Subset -->
 
-# Get rid of of everything except Eucalyptus obliqua
-new_types <- levels(configuration$types)
-new_types[new_types != "Eucalyptus obliqua"] <- "Other species"
-levels(configuration$types) <- new_types
+<!-- Let us restrict our attention to the plots on the bottom-right. -->
 
-for(i in seq_len(length(configurations))) {
-  new_types <- levels(configurations[[i]]$types)
-  new_types[new_types != "Eucalyptus obliqua"] <- "Other species"
-  levels(configurations[[i]]$types) <- new_types
-}
+<!-- ```{r, fig.height = 10, fig.width = 15} -->
+<!-- load(ausplots()) -->
+<!-- subs <- ppjsdm::Configuration(x = configuration$x[configuration$y < 3e3], -->
+<!--                               y = configuration$y[configuration$y < 3e3], -->
+<!--                               types = droplevels(configuration$types[configuration$y < 3e3]), -->
+<!--                               marks = configuration$marks[configuration$y < 3e3]) -->
+<!-- plot_indices <- sapply(window$y_ranges, function(yr) yr[2]) < 3e3 -->
+<!-- win <- ppjsdm::Rectangle_window_union(window$x_ranges[plot_indices], window$y_ranges[plot_indices]) -->
+<!-- print(win) -->
+<!-- plot(subs) -->
+<!-- ``` -->
 
-plot_index <- 2
-sp <- "Eucalyptus obliqua"
-sp_index <- which(names(coef(fit)$beta0) == sp)
-prediction_configuration <- configurations[[plot_index]]
-only_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types == sp], 
-                                      y = prediction_configuration$y[prediction_configuration$types == sp],
-                                      types = prediction_configuration$types[prediction_configuration$types == sp])
-everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types != sp], 
-                                                   y = prediction_configuration$y[prediction_configuration$types != sp],
-                                                   types = prediction_configuration$types[prediction_configuration$types != sp])
+<!-- ```{r} -->
+<!-- ntypes <- nlevels(subs$types) -->
+<!-- tm <- Sys.time() -->
+<!-- fit_complete <- ppjsdm::gibbsm(subs, -->
+<!--                                window = win, -->
+<!--                                model = "square_exponential", # Short-range interaction -->
+<!--                                medium_range_model = "tanh", # Medium-range interaction -->
+<!--                                short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances -->
+<!--                                medium_range = matrix(200, ntypes, ntypes), # Matrix of medium-range interaction distances -->
+<!--                                long_range = matrix(1000, ntypes, ntypes), # Matrix of long-range interaction distances -->
+<!--                                saturation = 10, # Saturation parameter -->
+<!--                                fitting_package = "glmnet", # Fitting package  -->
+<!--                                min_dummy = 1e3, # Force at least 1e4 dummy points per species -->
+<!--                                max_dummy = 1e3, # Force at maximum 1e4 dummy points per species -->
+<!--                                dummy_distribution = "binomial", # Distribution of dummy points -->
+<!--                                debug = TRUE, # Add debugging info -->
+<!--                                nthreads = 4) # Number of threads to use -->
+<!-- Sys.time() - tm -->
+<!-- summary(fit_complete) -->
+<!-- ``` -->
 
-samples <- ppjsdm::rgibbs(fit,
-                          nsim = 50,
-                          window = windows[[plot_index]], # Where we want to simulate
-                          steps = 1e3, # Number of steps in the Metropolis-Hastings algorithm
-                          starting_configuration = only_species, # Starting configuration in the simulation
-                          only_simulate_these_types = sp_index, # Which species to simulate
-                          conditional_configuration = everything_except_species) # Conditional on these individuals
+<!-- # Fit on one plot, predict on other -->
 
-ppp_samples <- lapply(samples, function(sample) ppp(x = sample$x,
-                                                    y = sample$y,
-                                                    window = owin(c(0, 100), c(0, 100))))
-only_species_ppp <- ppp(x = only_species$x,
-                        y = only_species$y,
-                        window = owin(c(0, 100), c(0, 100)))
+<!-- ```{r} -->
+<!-- fitting_plot <- "Mackenzie" -->
+<!-- fitting_configuration <- configurations[[fitting_plot]] -->
 
-intensities <- lapply(ppp_samples, function(sample) density(sample))
-conditional_intensity <- Reduce("+", intensities) / length(intensities)
-plot(conditional_intensity)
-points(only_species_ppp)
-auc(only_species_ppp, conditional_intensity)
+<!-- prediction_plot <- "BenRidge" -->
+<!-- prediction_configuration <- configurations[[prediction_plot]] -->
 
-intensity_at_points <- as.function(conditional_intensity)(only_species_ppp$x, only_species_ppp$y)
-residual <- density(only_species_ppp, weights = 1 / intensity_at_points)
-range(residual)
-plot(residual)
-hist(residual)
+<!-- species <- union(levels(fitting_configuration$types), levels(prediction_configuration$types)) -->
 
-true_vs_sample <- ppjsdm::Configuration(x = c(only_species$x, samples[[1]]$x),
-                                        y = c(only_species$y, samples[[1]]$y),
-                                        types = c(rep("true", length(only_species$x)), 
-                                                  rep("simulated", length(sample$x))))
-plot(true_vs_sample)
-```
+<!-- fitting_abundances <- sapply(species, function(t) sum(fitting_configuration$types == t)) -->
+<!-- prediction_abundances <- sapply(species, function(t) sum(prediction_configuration$types == t)) -->
+<!-- abundances <- setNames(sapply(species, function(sp) { -->
+<!--   fitting_abundances[sp] + prediction_abundances[sp] -->
+<!-- }), nm = union(names(fitting_abundances), names(prediction_abundances))) -->
+
+<!-- min_total <- 30 -->
+<!-- min_per_plot <- 10 -->
+<!-- new_names <- names(abundances) -->
+<!-- new_names[abundances[new_names] < min_total |  -->
+<!--             fitting_abundances[new_names] < min_per_plot |  -->
+<!--             prediction_abundances[new_names] < min_per_plot] <- "Other species" -->
+<!-- names(new_names) <- names(abundances) -->
+
+<!-- levels(fitting_configuration$types) <- new_names[levels(fitting_configuration$types)] -->
+<!-- levels(prediction_configuration$types) <- new_names[levels(prediction_configuration$types)] -->
+
+<!-- plot(fitting_configuration) -->
+<!-- plot(prediction_configuration) -->
+
+<!-- ntypes <- nlevels(fitting_configuration$types) -->
+<!-- tm <- Sys.time() -->
+<!-- fit <- ppjsdm::gibbsm(fitting_configuration, -->
+<!--                       window = windows[[fitting_plot]], -->
+<!--                       model = "square_exponential", # Short-range interaction -->
+<!--                       medium_range_model = "tanh", # Medium-range interaction -->
+<!--                       short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances -->
+<!--                       medium_range = matrix(20, ntypes, ntypes), # Matrix of medium-range interaction distances -->
+<!--                       long_range = matrix(50, ntypes, ntypes), # Matrix of long-range interaction distances -->
+<!--                       saturation = 10, # Saturation parameter -->
+<!--                       fitting_package = "glm", # Fitting package  -->
+<!--                       min_dummy = 1e4, # Force at least 1e4 dummy points per species -->
+<!--                       max_dummy = 1e4, # Force at maximum 1e4 dummy points per species -->
+<!--                       dummy_distribution = "stratified", # Distribution of dummy points -->
+<!--                       debug = TRUE, # Add debugging info -->
+<!--                       nthreads = 4) # Number of threads to use -->
+<!-- Sys.time() - tm -->
+<!-- summary(fit) -->
+
+<!-- print(fit$coefficients$alpha) -->
+<!-- print(fit$coefficients$gamma) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- sp <- levels(fitting_configuration$types)[1] -->
+<!-- print(sp) -->
+<!-- sp_index <- which(names(coef(fit)$beta0) == sp) -->
+<!-- only_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types == sp],  -->
+<!--                                       y = prediction_configuration$x[prediction_configuration$types == sp], -->
+<!--                                       types = prediction_configuration$types[prediction_configuration$types == sp]) -->
+<!-- everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types != sp],  -->
+<!--                                       y = prediction_configuration$x[prediction_configuration$types != sp], -->
+<!--                                       types = prediction_configuration$types[prediction_configuration$types != sp]) -->
+
+<!-- sample <- ppjsdm::rgibbs(fit, -->
+<!--                          window = windows[[prediction_plot]], -->
+<!--                          steps = 1e3, # Number of steps in the Metropolis-Hastings algorithm -->
+<!--                          starting_configuration = only_species, # Starting configuration in the simulation -->
+<!--                          only_simulate_these_types = sp_index, # Which species to simulate -->
+<!--                          conditional_configuration = everything_except_species) # Conditional on these individuals -->
+<!-- true_vs_sample <- ppjsdm::Configuration(x = c(only_species$x, sample$x), -->
+<!--                                         y = c(only_species$y, sample$y), -->
+<!--                                         types = c(rep("true", length(only_species$x)),  -->
+<!--                                                   rep("simulated", length(sample$x)))) -->
+<!-- plot(true_vs_sample) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- nsim <- 50 -->
+<!-- sp <- levels(fitting_configuration$types)[1] -->
+<!-- sp_index <- which(names(coef(fit)$beta0) == sp) -->
+<!-- only_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types == sp],  -->
+<!--                                       y = prediction_configuration$x[prediction_configuration$types == sp], -->
+<!--                                       types = prediction_configuration$types[prediction_configuration$types == sp]) -->
+<!-- everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$y[prediction_configuration$types != sp],  -->
+<!--                                                    y = prediction_configuration$x[prediction_configuration$types != sp], -->
+<!--                                                    types = prediction_configuration$types[prediction_configuration$types != sp]) -->
+
+<!-- samples <- lapply(seq_len(nsim), function(i) { -->
+<!--   ppjsdm::rgibbs(fit, -->
+<!--                  window = windows[[prediction_plot]], -->
+<!--                  steps = 1e3, -->
+<!--                  starting_configuration = Configuration(), -->
+<!--                  only_simulate_these_types = sp_index, -->
+<!--                  conditional_configuration = everything_except_species) -->
+<!-- }) -->
+
+<!-- samples <- lapply(samples, function(x) ppp(x = x$x, y = x$y, window = owin(c(0, 100), c(0, 100)))) -->
+
+<!-- only_species_ppp <- ppp(x = only_species$y[only_species$types == sp],  -->
+<!--                         y = only_species$x[only_species$types == sp], -->
+<!--                         window = owin(c(0, 100), c(0, 100))) -->
+<!-- env <- envelope(only_species_ppp, fun = Linhom, nsim = length(samples),  -->
+<!--                 normpower = 2, leaveoneout = FALSE, simulate = samples, verbose = FALSE) -->
+<!-- plot(env) -->
+<!-- abline(a = 0, b = 1, col = "blue") -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- intensities <- lapply(samples, function(sample) density(sample)) -->
+<!-- conditional_intensity <- Reduce("+", intensities) / length(intensities) -->
+<!-- plot(conditional_intensity) -->
+<!-- points(only_species_ppp) -->
+<!-- auc(only_species_ppp, conditional_intensity) -->
+
+<!-- intensity_at_points <- as.function(conditional_intensity)(only_species_ppp$x, only_species_ppp$y) -->
+<!-- residual <- density(only_species_ppp, weights = 1 / intensity_at_points) -->
+<!-- range(residual) -->
+<!-- plot(residual) -->
+<!-- hist(residual) -->
+<!-- ``` -->
+
+<!-- # Eucalyptus obliqua -->
+
+<!-- ```{r} -->
+<!-- load(ausplots(plots_to_consider = c("Newline", "WaratahMix", "WogWay", "Goodenia", "Candelo"), -->
+<!--               plot_minimum_abundance = 1)) -->
+
+<!-- # Get rid of of everything except Eucalyptus obliqua -->
+<!-- new_types <- levels(configuration$types) -->
+<!-- new_types[new_types != "Eucalyptus obliqua"] <- "Other species" -->
+<!-- levels(configuration$types) <- new_types -->
+
+<!-- ntypes <- nlevels(configuration$types) -->
+<!-- tm <- Sys.time() -->
+<!-- fit <- ppjsdm::gibbsm(configuration, -->
+<!--                       window = window, -->
+<!--                       model = "square_exponential", # Short-range interaction -->
+<!--                       medium_range_model = "tanh", # Medium-range interaction -->
+<!--                       short_range = matrix(10, ntypes, ntypes), # Matrix of short-range interaction distances -->
+<!--                       medium_range = matrix(15, ntypes, ntypes), # Matrix of medium-range interaction distances -->
+<!--                       long_range = matrix(50, ntypes, ntypes), # Matrix of long-range interaction distances -->
+<!--                       saturation = 4, # Saturation parameter -->
+<!--                       fitting_package = "glmnet", # Fitting package  -->
+<!--                       min_dummy = 1e5, # Force at least this many dummy points per species -->
+<!--                       max_dummy = 1e5, # Force at maximum this many dummy points per species -->
+<!--                       dummy_distribution = "binomial", # Distribution of dummy points -->
+<!--                       nthreads = 4) # Number of threads to use -->
+<!-- Sys.time() - tm -->
+<!-- fit$coefficients$alpha -->
+<!-- fit$coefficients$gamma -->
+<!-- summary(fit) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- load(ausplots(plots_to_consider = c("Flowerdale", "Dip", "Bird"), -->
+<!--               plot_minimum_abundance = 1)) -->
+
+<!-- # Get rid of of everything except Eucalyptus obliqua -->
+<!-- new_types <- levels(configuration$types) -->
+<!-- new_types[new_types != "Eucalyptus obliqua"] <- "Other species" -->
+<!-- levels(configuration$types) <- new_types -->
+
+<!-- for(i in seq_len(length(configurations))) { -->
+<!--   new_types <- levels(configurations[[i]]$types) -->
+<!--   new_types[new_types != "Eucalyptus obliqua"] <- "Other species" -->
+<!--   levels(configurations[[i]]$types) <- new_types -->
+<!-- } -->
+
+<!-- plot_index <- 2 -->
+<!-- sp <- "Eucalyptus obliqua" -->
+<!-- sp_index <- which(names(coef(fit)$beta0) == sp) -->
+<!-- prediction_configuration <- configurations[[plot_index]] -->
+<!-- only_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types == sp],  -->
+<!--                                       y = prediction_configuration$y[prediction_configuration$types == sp], -->
+<!--                                       types = prediction_configuration$types[prediction_configuration$types == sp]) -->
+<!-- everything_except_species <- ppjsdm::Configuration(x = prediction_configuration$x[prediction_configuration$types != sp],  -->
+<!--                                                    y = prediction_configuration$y[prediction_configuration$types != sp], -->
+<!--                                                    types = prediction_configuration$types[prediction_configuration$types != sp]) -->
+
+<!-- samples <- ppjsdm::rgibbs(fit, -->
+<!--                           nsim = 50, -->
+<!--                           window = windows[[plot_index]], # Where we want to simulate -->
+<!--                           steps = 1e3, # Number of steps in the Metropolis-Hastings algorithm -->
+<!--                           starting_configuration = only_species, # Starting configuration in the simulation -->
+<!--                           only_simulate_these_types = sp_index, # Which species to simulate -->
+<!--                           conditional_configuration = everything_except_species) # Conditional on these individuals -->
+
+<!-- ppp_samples <- lapply(samples, function(sample) ppp(x = sample$x, -->
+<!--                                                     y = sample$y, -->
+<!--                                                     window = owin(c(0, 100), c(0, 100)))) -->
+<!-- only_species_ppp <- ppp(x = only_species$x, -->
+<!--                         y = only_species$y, -->
+<!--                         window = owin(c(0, 100), c(0, 100))) -->
+
+<!-- intensities <- lapply(ppp_samples, function(sample) density(sample)) -->
+<!-- conditional_intensity <- Reduce("+", intensities) / length(intensities) -->
+<!-- plot(conditional_intensity) -->
+<!-- points(only_species_ppp) -->
+<!-- auc(only_species_ppp, conditional_intensity) -->
+
+<!-- intensity_at_points <- as.function(conditional_intensity)(only_species_ppp$x, only_species_ppp$y) -->
+<!-- residual <- density(only_species_ppp, weights = 1 / intensity_at_points) -->
+<!-- range(residual) -->
+<!-- plot(residual) -->
+<!-- hist(residual) -->
+
+<!-- true_vs_sample <- ppjsdm::Configuration(x = c(only_species$x, samples[[1]]$x), -->
+<!--                                         y = c(only_species$y, samples[[1]]$y), -->
+<!--                                         types = c(rep("true", length(only_species$x)),  -->
+<!--                                                   rep("simulated", length(sample$x)))) -->
+<!-- plot(true_vs_sample) -->
+<!-- ``` -->
 
 # Generate some pretty plots for presentation
 
