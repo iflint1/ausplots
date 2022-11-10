@@ -122,7 +122,7 @@ fit <- gibbsm(configuration,
               nthreads = 4, # Number of CPU cores to use
               dummy_distribution = "binomial") # Distribution of dummy points
 print(Sys.time() - tm)
-print(fit$coefficients$alpha)
+print(fit$coefficients$alpha[[1]])
 print(fit$coefficients$gamma)
 print(summary(fit))
 ```
@@ -148,8 +148,8 @@ It is also interesting to show the Papangelou conditional intensity, when condit
 This is readily done with the `drop_type_from_configuration` parameter.
 
 ```{r, fig.height = 5, fig.width = 8}
-sp <- "Eucalyptus regnans"
-plot_index <- 4
+sp <- "Pomaderris aspera"
+plot_index <- 1
 
 plot_papangelou(fit,
                 window = windows[[plot_index]],
@@ -208,7 +208,7 @@ fit <- gibbsm(configuration,
               nthreads = 4, # Number of CPU cores to use
               dummy_distribution = "binomial") # Distribution of dummy points
 print(Sys.time() - tm)
-print(fit$coefficients$alpha)
+print(fit$coefficients$alpha[[1]])
 print(fit$coefficients$gamma)
 print(summary(fit))
 ```
@@ -220,12 +220,12 @@ load(ausplots(plots_to_consider = c("Weeaproinah", "Turtons", "Lardner"),
               plot_minimum_abundance = 1))
 
 new_types <- levels(configuration$types)
-new_types[!(new_types %in% colnames(fit$coefficients$alpha))] <- "Rare species"
+new_types[!(new_types %in% colnames(fit$coefficients$alpha[[1]]))] <- "Rare species"
 levels(configuration$types) <- new_types
 
 for(i in seq_len(length(configurations))) {
   new_types <- levels(configurations[[i]]$types)
-  new_types[!(new_types %in% colnames(fit$coefficients$alpha))] <- "Rare species"
+  new_types[!(new_types %in% colnames(fit$coefficients$alpha[[1]]))] <- "Rare species"
   levels(configurations[[i]]$types) <- new_types
 }
 
@@ -294,7 +294,7 @@ fit <- gibbsm(Bruxner,
               nthreads = 4, # Number of threads to use
               dummy_distribution = "stratified") # Distribution of dummy points
 print(Sys.time() - tm)
-print(fit$coefficients$alpha)
+print(fit$coefficients$alpha[[1]])
 print(fit$coefficients$gamma)
 print(summary(fit))
 ```
@@ -355,7 +355,7 @@ It is found to have particularly large negative interactions with members of its
 
 ```{r}
 sp <- "Eucalyptus pilularis"
-print(sort(fit$coefficients$alpha[sp, ]))
+print(sort(fit$coefficients$alpha[[1]][sp, ]))
 print(sort(fit$coefficients$gamma[sp, ]))
 plot_papangelou(fit,
                 window = Bruxner_window,
@@ -374,8 +374,8 @@ sp <- "Eucalyptus pilularis"
 plot_papangelou(fit,
                 window = Bruxner_window,
                 configuration = Bruxner[unique(c(sp, 
-                                                 names(sort(fit$coefficients$alpha[sp, ]))[1],
-                                                 names(sort(fit$coefficients$alpha[sp, ], decreasing = TRUE))[1],
+                                                 names(sort(fit$coefficients$alpha[[1]][sp, ]))[1],
+                                                 names(sort(fit$coefficients$alpha[[1]][sp, ], decreasing = TRUE))[1],
                                                  names(sort(fit$coefficients$gamma[sp, ]))[1],
                                                  names(sort(fit$coefficients$gamma[sp, ], decreasing = TRUE))[1]))],
                 type = sp,
@@ -647,3 +647,1106 @@ plot(configurations$Dombakup)
 plot(configurations$ANU589)
 ```
 
+# Comparison of different regions
+
+We start with NE Vic.
+
+```{r}
+# All Vic plots: "ANU101", "Ada Tree", "Weeaproinah", "ANU363", "ANU589", "Turtons", "Lardner", "HardyCreek"
+load(ausplots(plots_to_consider = c("ANU101", "Ada Tree", "ANU363", "ANU589", "HardyCreek"),
+              overall_minimum_abundance = 50, 
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+plot(configurations[[5]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e5, # Force at least this many dummy points per species
+              max_dummy = 1e5, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i], " <-> ", levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+
+Ottways.
+
+```{r}
+# All Vic plots: "ANU101", "Ada Tree", "Weeaproinah", "ANU363", "ANU589", "Turtons", "Lardner", "HardyCreek"
+load(ausplots(plots_to_consider = c("Weeaproinah", "Turtons", "Lardner"),
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e5, # Force at least this many dummy points per species
+              max_dummy = 1e5, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+
+SE NSW.
+
+```{r}
+load(ausplots(plots_to_consider = c("Newline", "WaratahMix", "WogWay", "Goodenia", "Candelo"),
+              plot_minimum_abundance = 1)) # Only need one individual of the species on any of the plots for it to be considered
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+plot(configurations[[5]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e5, # Force at least this many dummy points per species
+              max_dummy = 1e5, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+
+N NSW.
+
+```{r}
+load(ausplots(plots_to_consider = c("MinesRd", "Tinebank", "Lorne", "BirdTree", "A-Tree", "BlackBull", "Bruxner", "Osullivans"),
+              overall_minimum_abundance = 200,
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+plot(configurations[[5]])
+plot(configurations[[6]])
+plot(configurations[[7]])
+plot(configurations[[8]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e4, # Force at least this many dummy points per species
+              max_dummy = 1e4, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+
+QLD
+
+```{r}
+load(ausplots(plots_to_consider = c("Herberton", "Lamb Range", "Baldy", "Koombooloomba"),
+              overall_minimum_abundance = 50,
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e4, # Force at least this many dummy points per species
+              max_dummy = 1e4, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+
+S WA. 
+
+```{r}
+load(ausplots(plots_to_consider = c("Frankland", "Clare", "Giants", "Dawson"),
+              overall_minimum_abundance = 100,
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e4, # Force at least this many dummy points per species
+              max_dummy = 1e4, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```
+N WA.
+
+```{r}
+load(ausplots(plots_to_consider = c("Collins", "Sutton", "Warren", "Carey", "Dombakup"),
+              overall_minimum_abundance = 100,
+              plot_minimum_abundance = 1))
+
+plot(configuration)
+plot(configurations[[1]])
+plot(configurations[[2]])
+plot(configurations[[3]])
+plot(configurations[[4]])
+plot(configurations[[5]])
+
+short <- 10 # Short-range distances
+medium <- 200 # Medium-range distances, larger than the plot size
+long <- 1000 # Long-range distances, chosen to forbid the plots located far awat from each other from "interacting" much
+
+ntypes <- nlevels(configuration$types)
+tm <- Sys.time()
+fit <- gibbsm(configuration,
+              window = window,
+              model = "square_exponential", # Short-range interaction
+              medium_range_model = "tanh", # Medium-range interaction
+              short_range = matrix(short, ntypes, ntypes), # Matrix of short-range interaction distances
+              medium_range = matrix(medium, ntypes, ntypes), # Matrix of medium-range interaction distances
+              long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
+              saturation = 4, # Saturation parameter
+              fitting_package = "glm", # Fitting package 
+              min_dummy = 1e4, # Force at least this many dummy points per species
+              max_dummy = 1e4, # Force at maximum this many dummy points per species
+              nthreads = 4, # Number of CPU cores to use
+              dummy_distribution = "binomial") # Distribution of dummy points
+print(Sys.time() - tm)
+print(fit$coefficients$alpha[[1]])
+print(fit$coefficients$gamma)
+summary_fit <- summary(fit)
+print(summary_fit)
+
+# Plot the coefficients
+nspecies <- nlevels(configuration$types)
+parameters <- fit$coefficients
+alpha <- parameters$alpha[[1]]
+gamma <- parameters$gamma
+
+ci_fit <- cbind(summary_fit$coefficients$CI95_lo, summary_fit$coefficients$CI95_hi)
+rownames(ci_fit) <- rownames(summary_fit$coefficients)
+
+alpha_diagonal_str <- paste0("alpha1_", 1:nspecies, "_", 1:nspecies)
+gamma_diagonal_str <- paste0("gamma_", 1:nspecies, "_", 1:nspecies)
+
+alpha_off_diagonal_str <- c()
+gamma_off_diagonal_str <- c()
+interaction_description <- c()
+for(i in seq_len(nspecies - 1)) {
+  for(j in (i + 1):nspecies) {
+    alpha_off_diagonal_str <- c(alpha_off_diagonal_str, paste0("alpha1_", i, "_", j))
+    gamma_off_diagonal_str <- c(gamma_off_diagonal_str, paste0("gamma_", i, "_", j))
+    interaction_description <- c(interaction_description, paste0(levels(ppjsdm::types(configuration))[i],
+                                                                 " <-> ",
+                                                                 levels(ppjsdm::types(configuration))[j]))
+  }
+}
+
+estimates_alpha_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% alpha_diagonal_str, 1]
+estimates_gamma_diagonal <- summary_fit$coefficients[rownames(summary_fit$coefficients) %in% gamma_diagonal_str, 1]
+i <- order(estimates_alpha_diagonal)
+im <- order(estimates_gamma_diagonal)
+estimates_alpha_diagonal <- estimates_alpha_diagonal[i]
+estimates_gamma_diagonal <- estimates_gamma_diagonal[im]
+
+CI95_lo_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 1][i]
+CI95_hi_alpha_diagonal <- ci_fit[rownames(ci_fit) %in% alpha_diagonal_str, 2][i]
+CI95_lo_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 1][im]
+CI95_hi_gamma_diagonal <- ci_fit[rownames(ci_fit) %in% gamma_diagonal_str, 2][im]
+
+estimates_alpha_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "alpha1_") & !(rownames(summary_fit$coefficients) %in% alpha_diagonal_str), 1]
+estimates_gamma_off_diagonal <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "gamma_") & !(rownames(summary_fit$coefficients) %in% gamma_diagonal_str), 1]
+
+j <- order(estimates_alpha_off_diagonal)
+jm <- order(estimates_gamma_off_diagonal)
+estimates_alpha_off_diagonal <- estimates_alpha_off_diagonal[j]
+estimates_gamma_off_diagonal <- estimates_gamma_off_diagonal[jm]
+
+CI95_lo_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 1][j]
+CI95_hi_alpha_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "alpha1_") & !(rownames(ci_fit) %in% alpha_diagonal_str), 2][j]
+CI95_lo_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 1][jm]
+CI95_hi_gamma_off_diagonal <- ci_fit[startsWith(rownames(ci_fit), "gamma_") & !(rownames(ci_fit) %in% gamma_diagonal_str), 2][jm]
+
+estimates_beta_intercept <- summary_fit$coefficients[startsWith(rownames(summary_fit$coefficients), "beta0"), 1][i]
+CI95_lo_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 1][i]
+CI95_hi_beta_intercept <- ci_fit[startsWith(rownames(ci_fit), "beta0"), 2][i]
+
+plot_coef <- function(title,
+                      estimates,
+                      CI95_lo,
+                      CI95_hi,
+                      labels = names(CI95_lo),
+                      base_size = 20,
+                      only_significant = FALSE,
+                      range = round(c(min(CI95_lo), max(CI95_hi)), digits = 1) + c(-0.1, 0.1),
+                      emphasize_zero = TRUE) {
+  nc <- length(estimates)
+  x <- factor(1:nc)
+  levels(x) <- labels
+  df <- data.frame(x = x, E = estimates, L = CI95_lo, U = CI95_hi)
+  
+  if(only_significant) {
+    df <- df[df$L > 0 | df$U < 0, ]
+  }
+  
+  g <- ggplot(df, aes(y = x, x = E))
+  
+  if(emphasize_zero) {
+    g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
+  }
+  
+  g <- g +
+    geom_point(size = 4) + # Size of point estimates
+    geom_errorbarh(aes(xmax = U, xmin = L), size = 1, height = 0.1) + # Error bars
+    xlab(NULL) + # Remove x labels
+    ylab(NULL) + # Remove y labels
+    ggtitle(title) + # Title
+    xlim(range[1], range[2]) +
+    theme_bw(base_size = base_size) + # Theme
+    theme(axis.text = element_text(size = 0.8 * base_size),
+          plot.title = element_text(size = 0.8 * base_size, hjust = 0.5)) # Title size & position
+  g
+}
+
+plot_coef(title = "Short range interaction within species",
+          estimates = estimates_alpha_diagonal,
+          CI95_lo = CI95_lo_alpha_diagonal,
+          CI95_hi = CI95_hi_alpha_diagonal,
+          labels = levels(ppjsdm::types(configuration))[i],
+          base_size = 15)
+plot_coef(title = "Short range interaction between species",
+          estimates = estimates_alpha_off_diagonal,
+          CI95_lo = CI95_lo_alpha_off_diagonal,
+          CI95_hi = CI95_hi_alpha_off_diagonal,
+          labels = interaction_description[j],
+          only_significant = TRUE,
+          base_size = 15)
+plot_coef(title = "Medium range interaction within species",
+          estimates = estimates_gamma_diagonal,
+          CI95_lo = CI95_lo_gamma_diagonal,
+          CI95_hi = CI95_hi_gamma_diagonal,
+          labels = levels(ppjsdm::types(configuration))[im],
+          base_size = 15)
+plot_coef(title = "Medium range interaction between species",
+          estimates = estimates_gamma_off_diagonal,
+          CI95_lo = CI95_lo_gamma_off_diagonal,
+          CI95_hi = CI95_hi_gamma_off_diagonal,
+          labels = interaction_description[jm],
+          only_significant = TRUE,
+          base_size = 15)
+```

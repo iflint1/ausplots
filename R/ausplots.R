@@ -91,9 +91,11 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   xs <- data$GDA2020_X - min_x + data$Ausplot_X
   ys <- data$GDA2020_Y - min_y + data$Ausplot_Y
   configuration <- if(use_marks) {
-    ppjsdm::Configuration(x = xs, y = ys, types = factor(factor(data$Genus_Species)), marks = data$Diameter / 100)
+    xs <- xs[!is.na(data$Diameter)]
+    ys <- ys[!is.na(data$Diameter)]
+    ppjsdm::Configuration(x = xs, y = ys, types = factor(data$Genus_Species[!is.na(data$Diameter)]), marks = data$Diameter[!is.na(data$Diameter)] / 100)
   } else {
-    ppjsdm::Configuration(x = xs, y = ys, types = factor(factor(data$Genus_Species)))
+    ppjsdm::Configuration(x = xs, y = ys, types = factor(data$Genus_Species))
   }
   
   # Construct the big window
