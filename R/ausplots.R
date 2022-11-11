@@ -6,6 +6,7 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
                      jitter = 1e-5, # Jitter locations with this std error
                      download_path = getwd(), # Where should we download the Ausplots CSV?
                      only_species_with_per_plot = 0, # Set this to >0 value to force all considered species to have a min amount of individuals on each plot
+                     split_threshold = NA, # Should we split Eucalypts into thin/thick for a given DBH threshold?
                      plots_to_consider) { # Which plots to consider?
   # Constants related to the dataset
   square_width <- 100
@@ -60,6 +61,9 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     data <- data[-base::sample(seq_len(nr), thinning_probability * nr), ]
   }
   
+  # Remove rows with NA species or NA dbh
+  data <- data[!is.na(data$Genus_Species) & !is.na(data$Diameter), ]
+  
   # Jitter 
   data$Ausplot_X <- rnorm(length(data$Ausplot_X), mean = data$Ausplot_X, sd = jitter)
   data$Ausplot_Y <- rnorm(length(data$Ausplot_Y), mean = data$Ausplot_Y, sd = jitter)
@@ -75,6 +79,16 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     sum(species == sp)
   })
   data$Genus_Species[species_abundance[data$Genus_Species] < overall_minimum_abundance] <- "Rare species"
+  
+  # Split Eucalypts into thin/thick 
+  if(!is.na(split_threshold)) {
+    is_eucalypt <- grepl("Eucalyptus", data$Genus_Species, fixed = TRUE)
+    data$Genus_Species[is_eucalypt] <- ifelse(
+      data$Diameter[is_eucalypt] < split_threshold,
+      paste0("Thin ", data$Genus_Species[is_eucalypt]),
+      paste0("Thick ", data$Genus_Species[is_eucalypt])
+    )
+  }
   
   # Ensure that we only consider species with a sufficient number of individuals per plot
   new_names <- sapply(unique(data$Genus_Species), function(sp) {
@@ -93,7 +107,7 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
   configuration <- if(use_marks) {
     xs <- xs[!is.na(data$Diameter)]
     ys <- ys[!is.na(data$Diameter)]
-    ppjsdm::Configuration(x = xs, y = ys, types = factor(data$Genus_Species[!is.na(data$Diameter)]), marks = data$Diameter[!is.na(data$Diameter)] / 100)
+    ppjsdm::Configuration(x = xs, y = ys, types = factor(data$Genus_Species), marks = data$Diameter / 100)
   } else {
     ppjsdm::Configuration(x = xs, y = ys, types = factor(data$Genus_Species))
   }

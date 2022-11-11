@@ -6,10 +6,11 @@ suppressMessages(library(spatstat))
 source("R/ausplots.R")
 
 short <- 10 # Short-range distances
-medium <- 0 # Medium-range distances, larger than the plot size
-long <- 0 # Long-range distances, chosen to forbid the plots located far away from each other from "interacting" much
+medium <- 150 # Medium-range distances, larger than the diagonal of the plot
 
-save_dir <- "~/AusplotsPics/"
+no_medium <- TRUE # Set this to TRUE if you want there to not be any medium-range interactions
+
+save_dir <- "~/AusplotsPicsNoMedium/"
 
 dir.create(save_dir, showWarnings = FALSE)
 
@@ -37,7 +38,7 @@ plot_coef <- function(title,
                       labels = names(CI95_lo),
                       base_size = 20,
                       only_significant = FALSE,
-                      range = trunc(c(min(CI95_lo), max(CI95_hi)) * 2) / 2 + c(-0.5, 0.5),
+                      range = trunc(c(min(CI95_lo), max(CI95_hi)) * 10) / 10,
                       emphasize_zero = TRUE) {
   nc <- length(estimates)
   x <- factor(1:nc)
@@ -54,13 +55,33 @@ plot_coef <- function(title,
     g <- g + geom_vline(xintercept = 0, color = "red", size = 2) # Vertical line at 0
   }
   
+  # Make sure the plot does not have too many ticks on the x axis
+  # breaks <- seq(from = range[1], to = range[2], by = 0.1)
+  # if(length(breaks) > 10) {
+  #   breaks <- seq(from = range[1], to = range[2], by = 0.25) 
+  #   if(length(breaks) > 10) {
+  #     breaks <- seq(from = range[1], to = range[2], by = 0.5)
+  #     if(length(breaks) > 10) {
+  #       breaks <- seq(from = range[1], to = range[2], by = 1)
+  #       minor_breaks <- seq(from = range[1], to = range[2], by = 0.5)
+  #     } else {
+  #       minor_breaks <- seq(from = range[1], to = range[2], by = 0.25)
+  #     }
+  #   } else {
+  #     minor_breaks <- seq(from = range[1], to = range[2], by = 0.125)
+  #   }
+  # } else {
+  #   minor_breaks <- seq(from = range[1], to = range[2], by = 0.05)
+  # }
+  
   g <- g +
     geom_point(size = 5) + # Size of point estimates
     geom_errorbarh(aes(xmax = U, xmin = L), size = 1.5, height = 0.1) + # Error bars
     xlab(NULL) + # Remove x labels
     ylab(NULL) + # Remove y labels
     ggtitle(title) + # Title
-    scale_x_continuous(minor_breaks = seq(from = range[1], to = range[2], by = 0.125), breaks = seq(from = range[1], to = range[2], by = 0.25)) +
+    # scale_x_continuous(minor_breaks = minor_breaks, 
+    #                    breaks = breaks) +
     theme_minimal(base_size = base_size) + # Theme
     theme(panel.grid.major = element_line(size = 2),
           axis.text = element_text(colour = "black", face = "bold", size = 0.8 * base_size),
@@ -69,10 +90,18 @@ plot_coef <- function(title,
 }
 
 plot_for_region <- function(region,
-                            show = FALSE) {
+                            show = TRUE,
+                            split_threshold = NA, # Threshold at which to split Eucalypts into tall/short
+                            long = 1000) { # Long range distance for the plot
   load(ausplots(plots_to_consider = region$plots,
                 overall_minimum_abundance = region$abundance, 
-                plot_minimum_abundance = 1))
+                use_marks = FALSE,
+                split_threshold = split_threshold,
+                plot_minimum_abundance = 0))
+  
+  if(no_medium) {
+    medium <- long <- 0
+  }
   
   ntypes <- nlevels(configuration$types)
   tm <- Sys.time()
@@ -85,12 +114,17 @@ plot_for_region <- function(region,
                 long_range = matrix(long, ntypes, ntypes), # Matrix of long-range interaction distances
                 saturation = 4, # Saturation parameter
                 fitting_package = "glm", # Fitting package 
+                use_regularization = FALSE, # Do we want to run a regularised fit? Useful if fitting psckage is glmnet
                 min_dummy = 1e5, # Force at least this many dummy points per species
                 max_dummy = 1e5, # Force at maximum this many dummy points per species
                 nthreads = 4, # Number of CPU cores to use
                 dummy_distribution = "binomial") # Distribution of dummy points
-  print(Sys.time() - tm)
+  if(any(abs(fit$coefficients_vector) > 1e5)) {
+    print(coef(fit))
+    error("Absurd fitted coefficients, there is probably an error in the model specification.")
+  }
   summary_fit <- summary(fit)
+  print(Sys.time() - tm)
   
   if(show) {
     print(fit$coefficients$alpha[[1]])
@@ -166,7 +200,7 @@ plot_for_region <- function(region,
                   CI95_lo = CI95_lo_alpha_off_diagonal,
                   CI95_hi = CI95_hi_alpha_off_diagonal,
                   labels = interaction_description[j],
-                  only_significant = TRUE,
+                  only_significant = FALSE,
                   base_size = 35))
   dev.off()
   if(!all(estimates_gamma_diagonal == 0)) {
@@ -186,7 +220,7 @@ plot_for_region <- function(region,
                     CI95_lo = CI95_lo_gamma_off_diagonal,
                     CI95_hi = CI95_hi_gamma_off_diagonal,
                     labels = interaction_description[jm],
-                    only_significant = TRUE,
+                    only_significant = FALSE,
                     base_size = 35))
     dev.off()
   }
@@ -194,31 +228,59 @@ plot_for_region <- function(region,
 
 plot_for_region(list(name = "NVic",
                      plots = c("ANU101", "Ada Tree", "ANU363", "ANU589", "HardyCreek"),
-                     abundance = 50))
+                     abundance = 50),
+                split_threshold = 80,
+                long = 1000)
 
 plot_for_region(list(name = "SVic",
                      plots = c("Weeaproinah", "Turtons", "Lardner"),
-                     abundance = 100))
+                     abundance = 100),
+                split_threshold = 80,
+                long = 1000)
+
+plot_for_region(list(name = "TASNoDelega",
+                     plots = c("Bird", "Supersite", "Weld", "ZigZag", "BlackRiver", "BondTier", 
+                               "Flowerdale", "Dip"),
+                     abundance = 400),
+                split_threshold = 80,
+                long = 5000)
+
+plot_for_region(list(name = "TASDelega",
+                     plots = c("NorthStyx", "MtField", "MtMaurice", "BenRidge", "Mackenzie", "Caveside"),
+                     abundance = 350),
+                split_threshold = 80,
+                long = 5000)
 
 plot_for_region(list(name = "SENSW",
                      plots = c("Newline", "WaratahMix", "WogWay", "Goodenia", "Candelo"),
-                     abundance = 100))
+                     abundance = 150),
+                split_threshold = 80,
+                long = 1000)
 
 plot_for_region(list(name = "NNSW",
-                     plots = c("MinesRd", "Tinebank", "Lorne", "BirdTree", "A-Tree", "BlackBull", "Bruxner", "Osullivans"),
-                     abundance = 200))
+                     plots = c("MinesRd", "Tinebank", "Lorne", "BirdTree", "A-Tree", 
+                               "BlackBull", "Bruxner", "Osullivans"),
+                     abundance = 400),
+                split_threshold = 80,
+                long = 1000)
 
 plot_for_region(list(name = "QLD",
                      plots = c("Herberton", "Lamb Range", "Baldy", "Koombooloomba"),
-                     abundance = 50))
+                     abundance = 50),
+                split_threshold = 80,
+                long = 1000)
 
 plot_for_region(list(name = "SWA",
                      plots = c("Frankland", "Clare", "Giants", "Dawson"),
-                     abundance = 100))
+                     abundance = 150),
+                split_threshold = 80,
+                long = 1000)
 
 plot_for_region(list(name = "NWA",
                      plots = c("Collins", "Sutton", "Warren", "Carey", "Dombakup"),
-                     abundance = 100))
+                     abundance = 100),
+                split_threshold = 80,
+                long = 1000)
 
 # Bruxner plot
 load(ausplots(plots = "Bruxner", plot_minimum_abundance = 15, overall_minimum_abundance = 15))
