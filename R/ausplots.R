@@ -85,8 +85,8 @@ ausplots <- function(overall_minimum_abundance = 100, # Minimum overall number o
     is_eucalypt <- grepl("Eucalyptus", data$Genus_Species, fixed = TRUE)
     data$Genus_Species[is_eucalypt] <- ifelse(
       data$Diameter[is_eucalypt] < split_threshold,
-      paste0("Thin ", data$Genus_Species[is_eucalypt]),
-      paste0("Thick ", data$Genus_Species[is_eucalypt])
+      paste0("Small ", data$Genus_Species[is_eucalypt]),
+      paste0("Big ", data$Genus_Species[is_eucalypt])
     )
   }
   
