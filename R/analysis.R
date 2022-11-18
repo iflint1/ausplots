@@ -1,3 +1,4 @@
+suppressMessages(library(circlize))
 suppressMessages(library(ggplot2))
 suppressMessages(library(ppjsdm))
 suppressMessages(library(rgdal))
@@ -483,6 +484,71 @@ ggplot() +
   theme_minimal() +
   geom_vline(aes(xintercept = mean(big_small_short)), colour = "red") +
   xlab("Big Eucalyptus VS Small Eucalyptus short-range interaction coefficient")
+
+# Example of chord diagram plot
+# Code below interates over the regions and ranges, and generates the corresponding cord diagram plots
+for(region in unique(dat$region)) { # Can be "SVic", "NVic", etc.
+  for(range in unique(dat$range)) { # Can be "Short" and "Medium"
+    chord <- dat[dat$region == region & dat$range == range, ] # Subset the data to that region, and those interactions
+    species <- unique(chord$species1) # Names of the species in this region
+    
+    # In the final cord diagram, some of the names can be too long, e.g. Nematolepis squamea subsp squamea,
+    # and the resulting plot has some overlap in the labels.
+    # You could choose meaningful abbreviation for each species by hand,
+    # I do this autmoatically below by taking the first letter of each word.
+    # So Nematolepis squamea subsp squamea -> NSSS and Big Eucalyptus regnans -> BER
+    abbreviated_species <- setNames(gsub('\\b(\\pL)\\pL{2,}|.', '\\U\\1', species, perl = TRUE),
+                                    nm = species)
+    # Abbreviate all species as above
+    chord$species1 <- abbreviated_species[as.character(chord$species1)]
+    chord$species2 <- abbreviated_species[as.character(chord$species2)]
+    
+    # The quantities below are used by circlize::chordDiagram to customise the chord diagram
+    # grid.col are the colours of the labels around the cord diagram, by default random.
+    # We (arbitrarily) choose green for Eucalypts and black for other species
+    grid.col <- setNames(ifelse(grepl("Eucalyptus", species), "green", "black"), 
+                         nm = abbreviated_species)
+    # Contains the interactions
+    chord_matrix <- matrix(NA,
+                           ncol = length(abbreviated_species),
+                           nrow = length(abbreviated_species))
+    colnames(chord_matrix) <- rownames(chord_matrix) <- abbreviated_species
+    # col contains the link colors, link.border the border color, and link.lwd the border line type
+    col <- link.border <- link.lwd <- chord_matrix
+    for(sp1 in abbreviated_species) {
+      for(sp2 in abbreviated_species) {
+        row <- (chord$species1 == sp1 & chord$species2 == sp2) | # Line corresponding to interaction between sp1 and sp2
+          (chord$species2 == sp1 & chord$species1 == sp2)
+        val <- chord$estimates[row] # Strength of interaction
+        chord_matrix[sp1, sp2] <- abs(val) # The link we want to plot is the absolute value
+        col[sp1, sp2] <- if(sign(val) == -1) { # Positive interactions in red, negative in blue
+          "blue"
+        } else {
+          "red"
+        }
+        if(chord$low[row] > 0 | chord$high[row] < 0) { # Statistically significant ones with black border
+          link.border[sp1, sp2] <- "black"
+          link.lwd[sp1, sp2] <- 2
+        } else {
+          link.lwd[sp1, sp2] <- 1
+        }
+      }
+    }
+    
+    # cex controls the font size, rest are just options to make plot slightly prettier
+    png(file = paste0(save_dir, region, "_", range, "_between_diagram.png"), bg = "white", width = 1000, height = 900)
+    par(cex = 3, mar = c(0, 0, 0, 0))
+    circlize::chordDiagram(chord_matrix,
+                           col = col,
+                           grid.col = grid.col,
+                           link.border = link.border,
+                           link.lwd = link.lwd,
+                           annotationTrack =  c("name", "grid"),
+                           preAllocateTracks = list(track.height = 0.1))
+    circos.clear()
+    dev.off()
+  }
+}
 
 ################################################################################
 ### Code below generates complementary analysis of the Bruxner plot used in a presentation
