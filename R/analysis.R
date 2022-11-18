@@ -499,6 +499,8 @@ for(region in unique(dat$region)) { # Can be "SVic", "NVic", etc.
     # So Nematolepis squamea subsp squamea -> NSSS and Big Eucalyptus regnans -> BER
     abbreviated_species <- setNames(gsub('\\b(\\pL)\\pL{2,}|.', '\\U\\1', species, perl = TRUE),
                                     nm = species)
+    # abbreviated_species <- setNames(species, # This version does not abbreviate
+    #                                 nm = species)
     # Abbreviate all species as above
     chord$species1 <- abbreviated_species[as.character(chord$species1)]
     chord$species2 <- abbreviated_species[as.character(chord$species2)]
@@ -536,15 +538,16 @@ for(region in unique(dat$region)) { # Can be "SVic", "NVic", etc.
     }
     
     # cex controls the font size, rest are just options to make plot slightly prettier
-    png(file = paste0(save_dir, region, "_", range, "_between_diagram.png"), bg = "white", width = 1000, height = 900)
-    par(cex = 3, mar = c(0, 0, 0, 0))
+    png(file = paste0(save_dir, region, "_", tolower(range), "_between_diagram.png"), bg = "white", width = 1000, height = 900)
+    par(cex = 2.2, mar = c(0, 0, 0, 0))
     circlize::chordDiagram(chord_matrix,
                            col = col,
                            grid.col = grid.col,
                            link.border = link.border,
                            link.lwd = link.lwd,
                            annotationTrack =  c("name", "grid"),
-                           preAllocateTracks = list(track.height = 0.1))
+                           preAllocateTracks = list(track.height = 0.1),
+                           symmetric = TRUE)
     circos.clear()
     dev.off()
   }
